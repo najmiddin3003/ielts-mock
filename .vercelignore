@@ -1,0 +1,6 @@
+# Vercel'ga chiqmasligi kerak bo'lgan fayllar (eski, kalit ichida yozilgan variantlar)
+ielts_gemeni.html
+ielts_mock_openai.html
+ielts_mock.html
+ielts_grok.html
+.env*

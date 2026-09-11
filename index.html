@@ -503,6 +503,34 @@ button.secondary .ripple{background:rgba(24,40,72,.15);}
 </div>
 
 <script>
+// ==================================================================
+// API KALITI BU FAYLDA YO'Q. U serverda turadi:
+//   Vercel → Project → Settings → Environment Variables → OPENAI_API_KEY
+// Brauzer faqat /api/grade manziliga essay/transkript matnini yuboradi;
+// prompt, model va limitlar — api/grade.js ichida. Kalit brauzerga hech qachon kelmaydi.
+// ==================================================================
+const GRADE_ENDPOINT = "/api/grade";
+
+// Serverga baholash so'rovi yuboradi va tayyor JSON qaytaradi.
+// Xatoda server o'zbekcha {error:"..."} qaytaradi — shuni Error sifatida tashlaymiz.
+async function askServer(payload){
+  let resp;
+  try{
+    resp = await fetch(GRADE_ENDPOINT, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+  }catch(netErr){
+    throw new Error("Tarmoq xatosi: server bilan bog'lanib bo'lmadi. Internetni tekshiring.");
+  }
+  const data = await resp.json().catch(()=>null);
+  if(!resp.ok){
+    throw new Error((data && data.error) || ('Server xatosi (' + resp.status + ')'));
+  }
+  return data;
+}
+
 // ---------------- STATE ----------------
 let user = null;
 let scores = { reading:null, listening:null, writing:null, speaking:null };
@@ -919,32 +947,9 @@ async function submitWriting(){
       <div class="skeleton" style="height:14px;width:55%;"></div>
     </div>`;
 
-  const prompt = `You are an official IELTS Writing examiner. Grade the following two responses using the real IELTS Writing band descriptors (Task Achievement/Response, Coherence and Cohesion, Lexical Resource, Grammatical Range and Accuracy), each scored 1-9 in 0.5 increments.
-
-TASK 1 (Academic, describe data, min 150 words):
-"""${t1}"""
-
-TASK 2 (Essay, min 250 words):
-"""${t2}"""
-
-Return ONLY valid JSON, no markdown, no preamble, in exactly this shape:
-{"task1_band": number, "task2_band": number, "overall_writing_band": number, "task1_feedback": "short feedback in Uzbek, 2-3 sentences", "task2_feedback": "short feedback in Uzbek, 2-3 sentences", "strengths": "1 sentence in Uzbek", "improve": "1 sentence in Uzbek"}
-overall_writing_band should be calculated as task1_band weighted 1/3 and task2_band weighted 2/3, rounded to the nearest 0.5.`;
-
   try{
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-6",
-        max_tokens:1000,
-        messages:[{role:"user", content: prompt}]
-      })
-    });
-    const data = await resp.json();
-    const raw = data.content.map(b=>b.text||'').join('');
-    const clean = raw.replace(/```json|```/g,'').trim();
-    const g = JSON.parse(clean);
+    // prompt serverda (api/grade.js) — bu yerdan faqat matn ketadi
+    const g = await askServer({ type:'writing', task1:t1, task2:t2 });
     scores.writing = g.overall_writing_band;
     await saveState();
     document.getElementById('writing-result').innerHTML = `
@@ -958,7 +963,10 @@ overall_writing_band should be calculated as task1_band weighted 1/3 and task2_b
     toast('Writing baholandi — Band '+g.overall_writing_band);
   }catch(e){
     console.error(e);
-    document.getElementById('writing-result').innerHTML = `<div class="feedback pop-in" style="color:var(--danger);">Baholashda xatolik yuz berdi. Qaytadan urinib ko'ring.</div>`;
+    document.getElementById('writing-result').innerHTML = `<div class="feedback pop-in" style="color:var(--danger);">
+      <b>Baholashda xatolik yuz berdi.</b>
+      <div class="smallnote" style="margin-top:6px;">${e.message}</div>
+    </div>`;
     toast('Baholashda xatolik yuz berdi.', 'warn');
   }
   btn.disabled = false;
@@ -1041,34 +1049,9 @@ async function submitSpeaking(){
       <div class="skeleton" style="height:14px;width:45%;"></div>
     </div>`;
 
-  const prompt = `You are an official IELTS Speaking examiner. Grade this candidate's speaking transcript using the real IELTS Speaking band descriptors (Fluency and Coherence, Lexical Resource, Grammatical Range and Accuracy, Pronunciation — pronunciation should be estimated leniently since this is a text transcript), each 1-9 in 0.5 increments.
-
-PART 1 (personal questions):
-${p1}
-
-PART 2 (cue card monologue):
-${p2}
-
-PART 3 (discussion):
-${p3}
-
-Return ONLY valid JSON, no markdown, no preamble, in exactly this shape:
-{"overall_speaking_band": number, "fluency_feedback": "short feedback in Uzbek", "lexical_feedback": "short feedback in Uzbek", "grammar_feedback": "short feedback in Uzbek", "improve": "1-2 sentences in Uzbek on how to improve"}`;
-
   try{
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-6",
-        max_tokens:800,
-        messages:[{role:"user", content: prompt}]
-      })
-    });
-    const data = await resp.json();
-    const raw = data.content.map(b=>b.text||'').join('');
-    const clean = raw.replace(/```json|```/g,'').trim();
-    const g = JSON.parse(clean);
+    // prompt serverda (api/grade.js) — bu yerdan faqat transkript ketadi
+    const g = await askServer({ type:'speaking', part1:p1, part2:p2, part3:p3 });
     scores.speaking = g.overall_speaking_band;
     await saveState();
     document.getElementById('speaking-result').innerHTML = `
@@ -1082,7 +1065,10 @@ Return ONLY valid JSON, no markdown, no preamble, in exactly this shape:
     toast('Speaking baholandi — Band '+g.overall_speaking_band);
   }catch(e){
     console.error(e);
-    document.getElementById('speaking-result').innerHTML = `<div class="feedback pop-in" style="color:var(--danger);">Baholashda xatolik yuz berdi. Qaytadan urinib ko'ring.</div>`;
+    document.getElementById('speaking-result').innerHTML = `<div class="feedback pop-in" style="color:var(--danger);">
+      <b>Baholashda xatolik yuz berdi.</b>
+      <div class="smallnote" style="margin-top:6px;">${e.message}</div>
+    </div>`;
     toast('Baholashda xatolik yuz berdi.', 'warn');
   }
 }

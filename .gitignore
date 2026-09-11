@@ -1,0 +1,6 @@
+# Maxfiy ma'lumotlar — hech qachon git'ga tushmasin
+.env
+.env.*
+!.env.example
+.vercel
+node_modules/
